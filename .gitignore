@@ -1,0 +1,5 @@
+/.idea
+/phpstan.neon
+/vendor
+/cache/*
+!/cache/.gitkeep
