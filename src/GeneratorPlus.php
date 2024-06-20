@@ -4,22 +4,34 @@ declare(strict_types=1);
 
 namespace Mano\GeneratorPlus;
 
+use Iterator;
 use Closure;
 use Generator;
 use Iterator;
-use Mano\GeneratorPlus\Exception\GeneratorRewindException;
 
 /**
- * @mixin Generator
- * @implements Iterator<mixed, mixed>
+ * @template TKey
+ * @template TValue
+ * @template TSend
+ * @template TReturn
+ * @implements Iterator<TKey,TValue>
+ * @mixin Generator<TKey,TValue, TSend, TReturn>
  */
-final class GeneratorPlus implements \Iterator
+final class GeneratorPlus implements Iterator
 {
+	/**
+	 * @param Generator<TKey, TValue, TSend, TReturn> $generator
+	 */
     private Generator $generator;
     private mixed $current;
     private mixed $key;
 
-    private function __construct(
+    private bool $skipMovingToNext = false;
+
+	/**
+	 * @param Generator<TKey, TValue, TSend, TReturn> $generator
+	 */
+	private function __construct(
         Generator $generator,
     ) {
 
@@ -30,11 +42,29 @@ final class GeneratorPlus implements \Iterator
     }
 
     /**
-     * @param Closure(): Generator<mixed> $callable
+	 * @param-immediately-invoked-callable $callable
+     * @param Closure(): Generator<TKey, TValue, TSend, TReturn> $callable
+	 * @return self<TKey, TValue, TSend, TReturn>
      */
     public static function createFromCallable(Closure $callable): self
     {
         return new self($callable());
+    }
+
+	/**
+	 * @param TSend $value
+	 * @return TValue|null
+	 */
+    public function sendInForeach(mixed $value): mixed
+    {
+        if ($this->skipMovingToNext === true) {
+            throw new \LogicException('You can only call sendInForeach method once per loop.');
+        }
+
+        $value = $this->send($value);
+        $this->skipMovingToNext = true;
+
+        return $value;
     }
 
     /**
@@ -49,6 +79,7 @@ final class GeneratorPlus implements \Iterator
 
     /**
      * @inheritDoc
+	 * @return TValue
      */
     public function current(): mixed
     {
@@ -57,6 +88,7 @@ final class GeneratorPlus implements \Iterator
 
     /**
      * @inheritDoc
+	 * @return TKey
      */
     public function key(): mixed
     {
@@ -68,7 +100,12 @@ final class GeneratorPlus implements \Iterator
      */
     public function next(): void
     {
-        $this->generator->next();
+        if ($this->skipMovingToNext === false) {
+            $this->generator->next();
+        } else {
+            $this->skipMovingToNext = false;
+        }
+
         $this->current = $this->generator->current();
         $this->key = $this->generator->key();
     }
@@ -83,6 +120,8 @@ final class GeneratorPlus implements \Iterator
 
     /**
      * @see Generator::send()
+	 * @param TSend $value
+	 * @return TValue|null
      */
     public function send(mixed $value): mixed
     {
@@ -91,6 +130,7 @@ final class GeneratorPlus implements \Iterator
 
     /**
      * @see Generator::getReturn()
+	 * @return TReturn $value
      */
     public function getReturn(): mixed
     {
