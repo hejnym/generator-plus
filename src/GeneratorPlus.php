@@ -7,7 +7,8 @@ namespace Mano\GeneratorPlus;
 use Iterator;
 use Closure;
 use Generator;
-use Iterator;
+use Mano\GeneratorPlus\EventDispatcher\GeneratorEventDispatcher;
+use Mano\GeneratorPlus\EventDispatcher\GeneratorPlusEvent;
 
 /**
  * @template TKey
@@ -19,42 +20,49 @@ use Iterator;
  */
 final class GeneratorPlus implements Iterator
 {
-	/**
-	 * @param Generator<TKey, TValue, TSend, TReturn> $generator
-	 */
+    /**
+     * @param Generator<TKey, TValue, TSend, TReturn> $generator
+     */
     private Generator $generator;
     private mixed $current;
     private mixed $key;
 
     private bool $skipMovingToNext = false;
+    private GeneratorEventDispatcher $eventDispatcher;
 
-	/**
-	 * @param Generator<TKey, TValue, TSend, TReturn> $generator
-	 */
-	private function __construct(
+    /**
+     * @param Generator<TKey, TValue, TSend, TReturn> $generator
+     * @param GeneratorEventDispatcher $eventDispatcher
+     */
+    private function __construct(
         Generator $generator,
+        GeneratorEventDispatcher $eventDispatcher,
     ) {
 
         $this->generator = $generator;
 
         $this->current = $this->generator->current();
         $this->key = $this->generator->key();
+        $this->eventDispatcher = $eventDispatcher;
     }
 
     /**
-	 * @param-immediately-invoked-callable $callable
-     * @param Closure(): Generator<TKey, TValue, TSend, TReturn> $callable
-	 * @return self<TKey, TValue, TSend, TReturn>
+     * @param-immediately-invoked-callable $callable
+     * @param callable(GeneratorEventDispatcher): Generator<TKey, TValue, TSend, TReturn> $callable
+     * @return self<TKey, TValue, TSend, TReturn>
      */
-    public static function createFromCallable(Closure $callable): self
+    public static function createFromCallable(callable $callable): self
     {
-        return new self($callable());
+        $eventDispatcher = new GeneratorEventDispatcher();
+        $generator = call_user_func($callable, $eventDispatcher);
+
+        return new self($generator, $eventDispatcher);
     }
 
-	/**
-	 * @param TSend $value
-	 * @return TValue|null
-	 */
+    /**
+     * @param TSend $value
+     * @return TValue|null
+     */
     public function sendInForeach(mixed $value): mixed
     {
         if ($this->skipMovingToNext === true) {
@@ -65,6 +73,16 @@ final class GeneratorPlus implements Iterator
         $this->skipMovingToNext = true;
 
         return $value;
+    }
+
+    /**
+     * @template TClosureEvent of GeneratorPlusEvent
+     * @param class-string<TClosureEvent> $eventName
+     * @param Closure(TClosureEvent): void $closure
+     */
+    public function attachEvent(string $eventName, Closure $closure): void
+    {
+        $this->eventDispatcher->attach($eventName, $closure);
     }
 
     /**
@@ -79,7 +97,7 @@ final class GeneratorPlus implements Iterator
 
     /**
      * @inheritDoc
-	 * @return TValue
+     * @return TValue
      */
     public function current(): mixed
     {
@@ -88,7 +106,7 @@ final class GeneratorPlus implements Iterator
 
     /**
      * @inheritDoc
-	 * @return TKey
+     * @return TKey
      */
     public function key(): mixed
     {
@@ -119,9 +137,10 @@ final class GeneratorPlus implements Iterator
     }
 
     /**
+     * It leads to faulty results if called within foreach loop. Use {@see self::sendInForeach } is such case.
      * @see Generator::send()
-	 * @param TSend $value
-	 * @return TValue|null
+     * @param TSend $value
+     * @return TValue|null
      */
     public function send(mixed $value): mixed
     {
@@ -130,7 +149,7 @@ final class GeneratorPlus implements Iterator
 
     /**
      * @see Generator::getReturn()
-	 * @return TReturn $value
+     * @return TReturn $value
      */
     public function getReturn(): mixed
     {
