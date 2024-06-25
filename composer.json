@@ -1,6 +1,6 @@
 {
   "name": "mano/generator-plus",
-  "description": "GeneratorPowered is a PHP library that wraps and extends the functionality of generators, providing enhanced features for more powerful and flexible generator usage.",
+  "description": "GeneratorPlus is a PHP library that wraps and extends the functionality of generators, providing enhanced features for more powerful and flexible generator usage.",
   "type": "library",
   "keywords": ["generator", "wrapper"],
   "license": "MIT",
