@@ -121,45 +121,66 @@ var_dump($generator->getReturn()); // Outputs [9, 9, 9, 9, 9];
 When dealing with batch processing in Doctrine, `GeneratorPlus` can come in handy. Usually, you need to flush and clear the entity manager after some batch size to prevent memory issues. Employing the generator's event dispatcher can convey the message that one chunk has been processed to fire an event that clears the entity manager. If you clear the entity manager in the middle of a batch, residual objects would be detached from the manager, leading to errors.
 
 ```php
-use Mano\GeneratorPlus\GeneratorPlus;
-use Mano\GeneratorPlus\EventDispatcher\EventDispatcher;
+class SomeRepository
+{
+	public function getSomeEntityBasedOnCondition(GeneratorEventDispatcher $eventDispatcher = null)
+	{
+		$counter = 0;
 
-$generatorPlus = GeneratorPlus::createFromCallable(function(EventDispatcher $eventDispatcher) {
-    $counter = 0;
+		while (true) {
+			$qb = $this->entityManager->createQueryBuilder()
+				->where('...') // select all entities that have not been updated yet
+				->setMaxResults(100);
 
-    while (true) {
-        $qb = $this->entityManager->createQueryBuilder()
-            ->where('...') // select all entities that have not been updated yet
-            ->setMaxResults(100);
-        
-        $result = $qb->getQuery()->getResult();
+			$result = $qb->getQuery()->getResult();
 
-        if (count($result) === 0) {
-            break;
-        }
+			if (count($result) === 0) {
+				break;
+			}
 
-        foreach ($result as $item) {
-            yield $item;
-            $counter++;
-        }
+			foreach ($result as $item) {
+				yield $item;
+				$counter++;
+			}
 
-        // let the client code know about reaching the end of the batch
-        $eventDispatcher->dispatch(new MyCustomFlushEvent($counter));
-    }
-});
+			if($eventDispatcher !== null) {
+				// let the client code know about reaching the end of the batch
+				$eventDispatcher->dispatch(new MyCustomFlushEvent($counter));
+			}
 
-$generatorPlus->attachEvent(MyCustomFlushEvent::class, function (MyCustomFlushEvent $event) {
-    // flush at the end of the batch
-    $this->entityManager->flush();
-    if ($event->getCount() % 500 === 0) {
-        // clear the entity manager
-        $this->entityManager->clear();
-    }
-});
+		}
+	}
+}
 
-foreach ($generatorPlus as $item) {
-    // some batch action
-    $item->setFoo(...);
+class SomeController
+{
+	public function __construct(private SomeRepository $repository)
+	{
+	}
+
+	public function someAction()
+	{
+		$generatorPlus = GeneratorPlus::createFromCallable(function (EventDispatcher $eventDispatcher) {
+			return $this->repository->getSomeEntityBasedOnCondition($eventDispatcher);
+		});
+
+		// Or use a different style if not any other arguments needed 
+		// $generatorPlus = GeneratorPlus::createFromCallable([$this->repository, 'getSomeEntityBasedOnCondition']);
+
+		$generatorPlus->attachEvent(MyCustomFlushEvent::class, function (MyCustomFlushEvent $event) {
+			// flush at the end of the batch
+			$this->entityManager->flush();
+			if ($event->getCount() % 500 === 0) {
+				// clear the entity manager
+				$this->entityManager->clear();
+			}
+		});
+
+		foreach ($generatorPlus as $item) {
+			// some batch action
+			$item->setFoo(...);
+		}
+	}
 }
 ```
 
